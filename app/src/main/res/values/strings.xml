@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Jarvis</string>
+    <string name="a11y_desc">Lets Jarvis read the screen and tap, type and scroll for you when you ask it to.</string>
+</resources>
