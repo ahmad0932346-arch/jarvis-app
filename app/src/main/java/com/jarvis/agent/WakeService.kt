@@ -113,12 +113,11 @@ class WakeService : Service() {
             .setModel(OpenWakeWord.BuiltInModel.HEY_JARVIS)
             .setThreshold(0.5f)
             .build()
-
-        wakeWord?.start {
-            scope.launch {
-                startSession(null)
-            }
-        }
+wakeWord?.start {
+    scope.launch {
+        startSession(null)
+    }
+}
 
         setNotif("Listening for the wake word \"Hey Jarvis\"")
     } catch (e: Exception) {
