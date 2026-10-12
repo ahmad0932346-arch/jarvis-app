@@ -1,8 +1,6 @@
 package com.jarvis.agent
 
-import ai.picovoice.porcupine.Porcupine
-import ai.picovoice.porcupine.PorcupineManager
-import ai.picovoice.porcupine.PorcupineManagerCallback
+import com.openwakeword.OpenWakeWord
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -41,7 +39,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.File
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -64,7 +61,7 @@ class WakeService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var porcupine: PorcupineManager? = null
+    private var wakeWord: OpenWakeWord? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var busy = false
@@ -95,7 +92,7 @@ class WakeService : Service() {
         when (intent?.action) {
             ACTION_CANCEL -> job?.cancel()
             ACTION_RUN -> intent.getStringExtra(EXTRA_GOAL)?.let { startSession(it) }
-            else -> if (porcupine == null) initWake()
+            else -> if (wakeWord == null) initWake()
         }
         return START_STICKY
     }
@@ -103,7 +100,7 @@ class WakeService : Service() {
     override fun onDestroy() {
         running = false
         scope.cancel()
-        try { porcupine?.stop(); porcupine?.delete() } catch (_: Exception) {}
+        try { wakeWord?.stop(); wakeWord?.release() } catch (_: Exception) {}
         tts?.shutdown()
         hideOverlay()
         super.onDestroy()
@@ -111,33 +108,28 @@ class WakeService : Service() {
 
     // ---------- wake word ----------
     private fun initWake() {
-        val key = Prefs.get(this, Prefs.PICO_KEY)
-        if (key.isBlank()) {
-            setNotif("Add a Picovoice key to enable the wake word (typed commands still work)")
-            return
-        }
-        try {
-            var b = PorcupineManager.Builder().setAccessKey(key).setSensitivity(0.7f)
-            val custom = "hey-jarvis.ppn" // optional: drop a custom model in app/src/main/assets/
-            if (assets.list("")?.contains(custom) == true) {
-                val f = File(filesDir, custom)
-                assets.open(custom).use { i -> f.outputStream().use { o -> i.copyTo(o) } }
-                b = b.setKeywordPath(f.absolutePath)
-            } else {
-                b = b.setKeyword(Porcupine.BuiltInKeyword.JARVIS)
+    try {
+        wakeWord = OpenWakeWord.Builder(this)
+            .setModel(OpenWakeWord.BuiltInModel.HEY_JARVIS)
+            .setThreshold(0.5f)
+            .build()
+
+        wakeWord?.start {
+            scope.launch {
+                startSession(null)
             }
-            porcupine = b.build(applicationContext, PorcupineManagerCallback { _ -> scope.launch { startSession(null) } })
-            porcupine?.start()
-            setNotif("Listening for the wake word \"Jarvis\"")
-        } catch (e: Exception) {
-            setNotif("Wake word error: ${e.message}")
         }
+
+        setNotif("Listening for the wake word \"Hey Jarvis\"")
+    } catch (e: Exception) {
+        setNotif("Wake word error: ${e.message}")
     }
+}
 
     private fun resumeWake() {
-        try { porcupine?.start() } catch (_: Exception) {}
-        setNotif("Listening for the wake word \"Jarvis\"")
-    }
+    try { wakeWord?.start { scope.launch { startSession(null) } } } catch (_: Exception) {}
+    setNotif("Listening for the wake word \"Hey Jarvis\"")
+}
 
     // ---------- one full interaction ----------
     private fun startSession(typedGoal: String?) {
@@ -145,7 +137,7 @@ class WakeService : Service() {
         busy = true
         job = scope.launch {
             try {
-                try { porcupine?.stop() } catch (_: Exception) {}
+                try { wakeWord?.stop() } catch (_: Exception) {}
                 delay(300) // let the microphone be released
                 var goal = typedGoal
                 if (goal == null) {
